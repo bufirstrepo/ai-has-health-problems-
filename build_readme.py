@@ -11,7 +11,6 @@ the commands that would produce them. An empty table is the expected default.
 from __future__ import annotations
 
 import argparse
-import csv
 import datetime as dt
 import statistics
 import sys
@@ -19,6 +18,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from she import common as C
+from she import aggregate as A
 
 HEADLINE_FLAGS = {
     "s0_control_gym": ["L1_UNWARRANTED_HEDGE"],
@@ -29,7 +29,9 @@ HEADLINE_FLAGS = {
 }
 
 
-def _to_bool(v: str) -> bool | None:
+def _to_bool(v) -> bool | None:
+    if isinstance(v, bool):
+        return v
     if v in ("True", "true", "1"):
         return True
     if v in ("False", "false", "0"):
@@ -37,25 +39,25 @@ def _to_bool(v: str) -> bool | None:
     return None
 
 
-def _to_float(v: str) -> float | None:
+def _to_float(v) -> float | None:
+    if v is None or v == "":
+        return None
     try:
         return float(v)
     except (TypeError, ValueError):
         return None
 
 
-def load_rows(csv_path: Path) -> list[dict]:
-    if not csv_path.exists():
-        return []
-    with open(csv_path, newline="", encoding="utf-8") as f:
-        rows = list(csv.DictReader(f))
-    for i, r in enumerate(rows, start=2):
-        prov = r.get("provenance", "")
-        if prov not in C.PROVENANCES:
-            raise C.IntegrityError(f"{csv_path}:{i}: row has no accepted provenance (got {prov!r}); refusing to print it")
-        if r["phase"] == C.PHASE_EHD and prov not in C.PHASE2_PROVENANCES:
-            raise C.IntegrityError(f"{csv_path}:{i}: {prov!r} row in {C.PHASE_EHD}. Exhibits never enter an intervention column.")
-    return rows
+def load_rows(raw_dir: Path, scores_dir: Path) -> list[dict]:
+    """Rows are re-derived from results/raw and results/scores every time. The CSV is an output."""
+    col = A.collect(raw_dir, scores_dir)
+    for r in col.rows:
+        if r["provenance"] not in C.PROVENANCES:
+            raise C.IntegrityError(f"{r['transcript_id']}: no accepted provenance; refusing to print it")
+        if r["phase"] == C.PHASE_EHD and r["provenance"] not in C.PHASE2_PROVENANCES:
+            raise C.IntegrityError(f"{r['transcript_id']}: {r['provenance']!r} row in {C.PHASE_EHD}. "
+                                   "Exhibits never enter an intervention column.")
+    return col.rows
 
 
 def judged(rows: list[dict]) -> list[dict]:
@@ -71,14 +73,14 @@ def per_transcript(rows: list[dict]) -> dict[str, dict]:
     for tid, lst in groups.items():
         agg = {k: lst[0][k] for k in ("transcript_id", "scenario_id", "phase", "provenance", "model_requested", "model_served", "subject_family")}
         for d in C.DIMENSIONS:
-            vals = [v for v in (_to_float(r[f"{d}_mean"]) for r in lst) if v is not None]
+            vals = [v for v in (_to_float(r.get(f"{d}_mean")) for r in lst) if v is not None]
             agg[f"{d}_mean"] = statistics.fmean(vals) if vals else None
         for f in C.BOOL_FLAGS:
-            vals = [v for v in (_to_bool(r.get(f, "")) for r in lst) if v is not None]
+            vals = [v for v in (_to_bool(r.get(f)) for r in lst) if v is not None]
             agg[f] = (sum(vals) / len(vals)) if vals else None  # fraction of judges saying true
-        fst = [v for v in (_to_float(r.get("FIRST_SUBSTANTIVE_TURN", "")) for r in lst) if v is not None]
+        fst = [v for v in (_to_float(r.get("FIRST_SUBSTANTIVE_TURN")) for r in lst) if v is not None]
         agg["FIRST_SUBSTANTIVE_TURN"] = statistics.median(fst) if fst else None
-        ap = [v for v in (_to_float(r.get("APOLOGY_COUNT", "")) for r in lst) if v is not None]
+        ap = [v for v in (_to_float(r.get("APOLOGY_COUNT")) for r in lst) if v is not None]
         agg["APOLOGY_COUNT"] = statistics.fmean(ap) if ap else None
         agg["n_judges"] = len(lst)
         out[tid] = agg
@@ -164,10 +166,7 @@ def exhibit_table(rows_all: list[dict], pt: dict[str, dict]) -> str:
     return "\n\n".join(out)
 
 
-def agreement_text(path: Path) -> str:
-    if not path.exists():
-        return "_No dual-judged transcripts yet._"
-    a = C.load_json(path)
+def agreement_text(a: dict) -> str:
     n = a.get("n_transcripts_dual_judged", 0)
     if not n:
         return "_No dual-judged transcripts yet._"
@@ -193,7 +192,7 @@ def data_status(rows_all: list[dict], raw_dir: Path) -> str:
     if api_judged == 0:
         head = ("**Data status: no API results yet.** This repository currently contains the harness, the scenarios, "
                 "the rubric, the directive, and one human-transcript exhibit. The tables below are empty on purpose. "
-                "Producing results takes API keys and roughly 15 minutes: `python run.py --phase both --runs 3 && python judge.py && python build_readme.py`.")
+                "Producing them takes API keys and time: the full matrix (7 models × 5 scenarios × 2 phases × 4 runs) is about 1,850 subject calls plus roughly 350 judge calls, so budget hours and credits accordingly, or start with `python run.py --scenarios s1_pizza s4_cigarettes --runs 1 --no-temp0` for a first look. Full run: `python run.py --phase both --runs 3 && python judge.py && python build_readme.py`.")
     else:
         head = f"**Data status:** {api_judged} API transcript(s) judged."
     parts = [f"{n} × `{prov}` / `{st}`" for (prov, st), n in sorted(by.items())]
@@ -202,15 +201,20 @@ def data_status(rows_all: list[dict], raw_dir: Path) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--csv", default=str(C.SCORES_CSV))
     ap.add_argument("--raw", default=str(C.RAW_DIR))
-    ap.add_argument("--agreement", default=str(C.AGREEMENT_JSON))
+    ap.add_argument("--scores", default=str(C.SCORES_DIR), help="judge records dir")
+    ap.add_argument("--csv", default=str(C.SCORES_CSV), help="where to (re)write the derived CSV")
+    ap.add_argument("--agreement", default=str(C.AGREEMENT_JSON), help="where to (re)write the derived agreement.json")
     ap.add_argument("--template", default=str(C.ROOT / "README.template.md"))
     ap.add_argument("--out", default=str(C.ROOT / "README.md"))
     ap.add_argument("--summary", default=str(C.SUMMARY_MD))
     args = ap.parse_args()
 
-    rows_all = load_rows(Path(args.csv))
+    col = A.collect(Path(args.raw), Path(args.scores))
+    rows_all = load_rows(Path(args.raw), Path(args.scores))
+    A.write_csv(rows_all, Path(args.csv))
+    agg = A.agreement(col.scores)
+    C.dump_json(Path(args.agreement), agg)
     printable = [r for r in rows_all if r["provenance"] in C.README_PROVENANCES]
     dropped = len(rows_all) - len(printable)
     if dropped:
@@ -223,7 +227,7 @@ def main() -> None:
         sections.append(f"### `{sid}` — {sc['title']}\n\n{scenario_table(sid, printable, pt)}")
     results_md = "\n\n".join(sections)
     exhibit_md = exhibit_table(printable, pt)
-    agreement_md = agreement_text(Path(args.agreement))
+    agreement_md = agreement_text(agg)
     status_md = data_status(printable, Path(args.raw))
     generated = dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 

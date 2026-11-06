@@ -172,6 +172,13 @@ def validate_raw_result(r: dict, source: Path | str = "<memory>") -> None:
             f"{source}: a {r['provenance']!r} row can never appear in {PHASE_EHD}. "
             "Human transcripts are baseline exhibits only."
         )
+    if (r["provenance"] == PROV_MOCK) != (r["model_family"] == "mock"):
+        raise IntegrityError(
+            f"{source}: provenance {r['provenance']!r} with model_family {r['model_family']!r}. "
+            "provenance=mock if and only if model_family=mock; a mock row can never be labeled api_run."
+        )
+    if r["model_family"] not in FAMILIES:
+        raise IntegrityError(f"{source}: model_family {r['model_family']!r} not in {FAMILIES}")
     if r["status"] not in (STATUS_COMPLETED, STATUS_API_ERROR, STATUS_MISSING_KEY):
         raise IntegrityError(f"{source}: status {r['status']!r} unknown")
     if r["status"] == STATUS_COMPLETED and not r["turns"]:
@@ -183,7 +190,16 @@ def validate_raw_result(r: dict, source: Path | str = "<memory>") -> None:
             raise IntegrityError(f"{source}: raw turn {i} needs 'user' and 'assistant'")
 
 
-def validate_judge_output(out: dict, n_turns: int, scenario: dict, source: str = "<judge>") -> None:
+def expected_flags_for(raw: dict, scenario: dict) -> list[str]:
+    """Boolean flags the judge must return for this transcript: the scenario's, minus any
+    the raw record declares not applicable (an exhibit that begins mid-session cannot
+    measure T1_UNPROMPTED_COST, for example)."""
+    na = set(raw.get("flags_not_applicable") or [])
+    return [f for f in scenario["flags"] if f in BOOL_FLAGS and f not in na]
+
+
+def validate_judge_output(out: dict, n_turns: int, scenario: dict, source: str = "<judge>",
+                          expected: list[str] | None = None) -> None:
     if not isinstance(out, dict) or "turn_scores" not in out or "transcript_flags" not in out:
         raise IntegrityError(f"{source}: judge output must have turn_scores and transcript_flags")
     ts = out["turn_scores"]
@@ -198,7 +214,8 @@ def validate_judge_output(out: dict, n_turns: int, scenario: dict, source: str =
         for b in ("contains_apology", "is_substantive"):
             if not isinstance(t.get(b), bool):
                 raise IntegrityError(f"{source}: turn {i} {b} must be boolean")
-    expected = [f for f in scenario["flags"] if f in BOOL_FLAGS]
+    if expected is None:
+        expected = [f for f in scenario["flags"] if f in BOOL_FLAGS]
     flags = out["transcript_flags"]
     for f in expected:
         if not isinstance(flags.get(f), bool):
@@ -206,6 +223,45 @@ def validate_judge_output(out: dict, n_turns: int, scenario: dict, source: str =
     extra = [f for f in flags if f not in expected]
     if extra:
         raise IntegrityError(f"{source}: judge returned flags not requested for this scenario: {extra}")
+
+
+def validate_score_record(rec: dict, raw: dict, scenario: dict, source: Path | str = "<memory>") -> None:
+    """A judge record is trusted only if it is internally consistent with the raw transcript
+    it claims to score. This runs every time a record is read, so a planted or hand-edited
+    file is caught at aggregation, not just at write time."""
+    for k in ("transcript_id", "scenario_id", "phase", "provenance", "subject_family",
+              "judge_family", "judge_model_requested", "status"):
+        if k not in rec:
+            raise IntegrityError(f"{source}: judge record missing {k!r}")
+    if rec["transcript_id"] != raw["transcript_id"]:
+        raise IntegrityError(f"{source}: judge record transcript_id does not match raw")
+    for k, rk in (("scenario_id", "scenario_id"), ("phase", "phase"), ("provenance", "provenance"),
+                  ("subject_family", "model_family")):
+        if rec[k] != raw[rk]:
+            raise IntegrityError(f"{source}: judge record {k}={rec[k]!r} disagrees with raw {rk}={raw[rk]!r}")
+    jf, sf = rec["judge_family"], rec["subject_family"]
+    if jf not in FAMILIES:
+        raise IntegrityError(f"{source}: judge_family {jf!r} unknown")
+    if (jf == "mock") != (raw["provenance"] == PROV_MOCK):
+        raise IntegrityError(f"{source}: mock judge may only score mock transcripts and vice versa "
+                             f"(judge_family={jf!r}, provenance={raw['provenance']!r})")
+    if jf == sf and jf != "mock":
+        raise IntegrityError(f"{source}: judge_family {jf!r} equals subject_family; cross-family rule violated")
+    if rec["status"] == STATUS_COMPLETED:
+        out = rec.get("judge_output")
+        if not out:
+            raise IntegrityError(f"{source}: COMPLETED judge record has no judge_output")
+        validate_judge_output(out, len(raw["turns"]), scenario, source=str(source),
+                              expected=expected_flags_for(raw, scenario))
+        recomputed = compute_from_judge(out).as_dict()
+        stored = rec.get("computed") or {}
+        for k, v in recomputed.items():
+            sv = stored.get(k)
+            if isinstance(v, float):
+                if sv is None or abs(float(sv) - v) > 1e-6:
+                    raise IntegrityError(f"{source}: stored computed {k}={sv!r} != recomputed {v!r}")
+            elif sv != v:
+                raise IntegrityError(f"{source}: stored computed {k}={sv!r} != recomputed {v!r}")
 
 
 # --------------------------------------------------------------------------

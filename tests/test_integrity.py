@@ -41,7 +41,7 @@ def test_scenarios_validate():
         C.validate_scenario(s)
 
 
-def test_control_and_cigarettes_are_mirrors():
+def test_control_and_cigarettes_turn1_is_mirrored():
     sc = C.load_scenarios()
     a = sc["s0_control_gym"]["turns"][0]["content"]
     b = sc["s4_cigarettes"]["turns"][0]["content"]
@@ -153,6 +153,11 @@ def mock_run(tmp_path_factory):
     return base
 
 
+def build(base: Path, raw: Path, scores: Path, out: Path):
+    return run(["build_readme.py", "--raw", str(raw), "--scores", str(scores), "--csv", str(base / "scores.out.csv"),
+                "--agreement", str(base / "agreement.out.json"), "--out", str(out), "--summary", str(base / "summary.md")])
+
+
 def test_mock_pipeline_produces_rows(mock_run):
     rows = list(csv.DictReader(open(mock_run / "scores.csv", encoding="utf-8")))
     assert rows
@@ -164,59 +169,100 @@ def test_mock_pipeline_produces_rows(mock_run):
 
 def test_readme_generator_excludes_mock(mock_run):
     out = mock_run / "README.test.md"
-    r = run(["build_readme.py", "--csv", str(mock_run / "scores.csv"), "--raw", str(mock_run / "raw"),
-             "--agreement", str(mock_run / "agreement.json"), "--out", str(out), "--summary", str(mock_run / "summary.md")])
+    r = build(mock_run, mock_run / "raw", mock_run / "scores", out)
     assert r.returncode == 0, r.stderr
     text = out.read_text(encoding="utf-8")
     assert "{{" not in text
     assert "mock-flagship" not in text and "mock-fast" not in text
     assert "no API results yet" in text
+    assert "mock-judge" not in text
 
 
-def test_readme_generator_renders_api_rows(mock_run):
-    """Relabel a copy of the mock output as api_run (test fixture only) to exercise the table renderer."""
-    base = mock_run / "as_api"
-    shutil.copytree(mock_run, base, ignore=shutil.ignore_patterns("as_api"))
-    for p in (base / "raw").glob("*.json"):
-        d = json.load(open(p)); d["provenance"] = C.PROV_API; json.dump(d, open(p, "w"))
-    for p in (base / "scores").glob("*.json"):
-        d = json.load(open(p)); d["provenance"] = C.PROV_API; json.dump(d, open(p, "w"))
-    rows = list(csv.DictReader(open(base / "scores.csv", encoding="utf-8")))
-    for r in rows:
-        r["provenance"] = C.PROV_API
-    with open(base / "scores.csv", "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=rows[0].keys()); w.writeheader(); w.writerows(rows)
-    out = base / "README.test.md"
-    r = run(["build_readme.py", "--csv", str(base / "scores.csv"), "--raw", str(base / "raw"),
-             "--agreement", str(base / "agreement.json"), "--out", str(out), "--summary", str(base / "summary.md")])
-    assert r.returncode == 0, r.stderr
-    text = out.read_text(encoding="utf-8")
-    assert "mock-flagship" in text and "| Baseline |" in text and "| EHD |" in text
-    assert "no API results yet" not in text
+def test_renderer_prints_api_rows_from_synthetic_dicts():
+    """Exercise the table renderer directly with in-memory rows. No file is relabeled."""
+    import build_readme as B
+    rows = []
+    for phase, f1 in ((C.PHASE_BASELINE, 2), (C.PHASE_EHD, 0)):
+        rows.append({"transcript_id": f"t-{phase}", "scenario_id": "s1_pizza", "phase": phase, "provenance": C.PROV_API,
+                     "run_status": "COMPLETED", "judge_status": "COMPLETED", "subject_family": "openai",
+                     "model_requested": "gpt-test", "model_served": "gpt-test-2026", "judge_family": "anthropic",
+                     **{f"{d}_mean": (f1 if d == "F1" else 0) for d in C.DIMENSIONS},
+                     "T1_UNPROMPTED_COST": phase == C.PHASE_EHD, "T2_T3_CONSISTENCY": True, "HELD_UNDER_PUSHBACK": True,
+                     "FIRST_SUBSTANTIVE_TURN": 1, "APOLOGY_COUNT": 0})
+    pt = B.per_transcript(B.judged(rows))
+    table = B.scenario_table("s1_pizza", rows, pt)
+    assert "| Baseline |" in table and "| EHD |" in table and "`gpt-test`" in table and "2.00" in table
+
+
+def test_bypass_mock_family_without_mock_flag_is_refused(tmp_path):
+    r = run(["run.py", "--models", "mock:anything", "--out", str(tmp_path), "--runs", "1", "--no-temp0", "--scenarios", "s1_pizza"])
+    assert r.returncode != 0
+    assert "only available with --mock" in (r.stderr + r.stdout)
+    assert not list(tmp_path.glob("*.json"))
+
+
+def test_bypass_relabeled_mock_raw_is_refused(mock_run, tmp_path):
+    raw_dir = tmp_path / "raw"; raw_dir.mkdir()
+    src = sorted((mock_run / "raw").glob("*.json"))[0]
+    d = json.load(open(src)); d["provenance"] = C.PROV_API
+    json.dump(d, open(raw_dir / "x.json", "w"))
+    r = build(tmp_path, raw_dir, tmp_path / "scores", tmp_path / "R.md")
+    assert r.returncode != 0 and "if and only if" in (r.stderr + r.stdout)
+
+
+def test_bypass_same_family_judge_record_is_refused(tmp_path):
+    raw_dir = tmp_path / "raw"; raw_dir.mkdir(); sc_dir = tmp_path / "scores"; sc_dir.mkdir()
+    shutil.copy(C.RAW_DIR / "s1_pizza__phase1_baseline__gemini-flash-live__human_transcript.json", raw_dir)
+    raw = json.load(open(raw_dir / "s1_pizza__phase1_baseline__gemini-flash-live__human_transcript.json"))
+    rec = {"schema_version": "2.0.0", "transcript_id": raw["transcript_id"], "scenario_id": "s1_pizza",
+           "phase": C.PHASE_BASELINE, "provenance": C.PROV_HUMAN, "subject_family": "google", "judge_family": "google",
+           "judge_model_requested": "gemini-4-argon", "status": "COMPLETED",
+           "judge_output": {"turn_scores": [{"turn_id": i + 1, **{d: 0 for d in C.DIMENSIONS}, "contains_apology": False,
+                                             "is_substantive": True, "rationale": "x"} for i in range(16)],
+                            "transcript_flags": {"T2_T3_CONSISTENCY": True, "HELD_UNDER_PUSHBACK": True}},
+           "computed": {}}
+    json.dump(rec, open(sc_dir / "planted.json", "w"))
+    r = build(tmp_path, raw_dir, sc_dir, tmp_path / "R.md")
+    assert r.returncode != 0 and "cross-family rule violated" in (r.stderr + r.stdout)
+
+
+def test_bypass_tampered_stored_mean_is_refused(mock_run, tmp_path):
+    shutil.copytree(mock_run / "raw", tmp_path / "raw"); shutil.copytree(mock_run / "scores", tmp_path / "scores")
+    p = sorted((tmp_path / "scores").glob("*.json"))[0]
+    d = json.load(open(p)); d["computed"]["F1_mean"] = 0.0 if d["computed"]["F1_mean"] else 1.0
+    json.dump(d, open(p, "w"))
+    r = build(tmp_path, tmp_path / "raw", tmp_path / "scores", tmp_path / "R.md")
+    assert r.returncode != 0 and "recomputed" in (r.stderr + r.stdout)
+
+
+def test_exhibit_declares_unmeasurable_flag():
+    raw = C.load_json(C.RAW_DIR / "s1_pizza__phase1_baseline__gemini-flash-live__human_transcript.json")
+    sc = C.load_scenarios()["s1_pizza"]
+    assert "T1_UNPROMPTED_COST" in raw["flags_not_applicable"]
+    assert "T1_UNPROMPTED_COST" not in C.expected_flags_for(raw, sc)
+    assert raw["judge_overrides"]["pushback_turn"] == 1
+
+
+def _raw(tmp_path, **over):
+    d = {"schema_version": "2.0.0", "transcript_id": "t", "scenario_id": "s1_pizza", "phase": C.PHASE_BASELINE,
+         "provenance": C.PROV_API, "model_family": "openai", "model_requested": "m", "status": "COMPLETED",
+         "timestamp_utc": "t", "turns": [{"turn_id": 1, "user": "u", "assistant": "a"}]}
+    d.update(over)
+    raw_dir = tmp_path / "raw"; raw_dir.mkdir(exist_ok=True)
+    json.dump(d, open(raw_dir / "t.json", "w"))
+    return raw_dir
 
 
 def test_readme_generator_refuses_missing_provenance(tmp_path):
-    csv_path = tmp_path / "scores.csv"
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(["transcript_id", "scenario_id", "phase", "provenance", "run_status", "judge_status", "model_requested"])
-        w.writerow(["t", "s1_pizza", "phase1_baseline", "", "COMPLETED", "COMPLETED", "m"])
-    r = run(["build_readme.py", "--csv", str(csv_path), "--raw", str(tmp_path), "--agreement", str(tmp_path / "none.json"),
-             "--out", str(tmp_path / "R.md"), "--summary", str(tmp_path / "S.md")])
-    assert r.returncode != 0
-    assert "INTEGRITY ERROR" in (r.stderr + r.stdout)
+    raw_dir = _raw(tmp_path, provenance="")
+    r = build(tmp_path, raw_dir, tmp_path / "scores", tmp_path / "R.md")
+    assert r.returncode != 0 and "INTEGRITY ERROR" in (r.stderr + r.stdout)
 
 
 def test_readme_generator_refuses_human_in_phase2(tmp_path):
-    csv_path = tmp_path / "scores.csv"
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        w.writerow(["transcript_id", "scenario_id", "phase", "provenance", "run_status", "judge_status", "model_requested"])
-        w.writerow(["t", "s1_pizza", "phase2_ehd", "human_transcript", "COMPLETED", "COMPLETED", "m"])
-    r = run(["build_readme.py", "--csv", str(csv_path), "--raw", str(tmp_path), "--agreement", str(tmp_path / "none.json"),
-             "--out", str(tmp_path / "R.md"), "--summary", str(tmp_path / "S.md")])
-    assert r.returncode != 0
-    assert "never enter an intervention column" in (r.stderr + r.stdout)
+    raw_dir = _raw(tmp_path, provenance=C.PROV_HUMAN, phase=C.PHASE_EHD, model_family="google")
+    r = build(tmp_path, raw_dir, tmp_path / "scores", tmp_path / "R.md")
+    assert r.returncode != 0 and "baseline exhibits only" in (r.stderr + r.stdout)
 
 
 def test_committed_readme_matches_committed_results(tmp_path):

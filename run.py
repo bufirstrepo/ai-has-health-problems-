@@ -43,6 +43,8 @@ def parse_models(specs: list[str] | None, tiers: list[str], mock: bool) -> list[
             fam, model = s.split(":", 1)
             if fam not in C.FAMILIES:
                 sys.exit(f"unknown family {fam!r}; known: {C.FAMILIES}")
+            if fam == "mock":
+                sys.exit("the mock family is only available with --mock; a mock transcript can never be labeled api_run")
             out.append((fam, model))
         return out
     cfg = C.load_models_config()
