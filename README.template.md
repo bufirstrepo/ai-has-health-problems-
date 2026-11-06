@@ -23,7 +23,7 @@ The first user turn of `s0` and `s4` is word-for-word identical except for the b
 ## Run it
 
 ```bash
-git clone https://github.com/dynoshippedit/sycophancy-health-eval.git && cd sycophancy-health-eval
+git clone https://github.com/bufirstrepo/ai-has-health-problems-.git && cd ai-has-health-problems-
 pip install -r requirements.txt && cp .env.example .env   # add your API keys
 python run.py --list-models                                 # confirm models.json against each provider
 python run.py --phase both --runs 3 && python judge.py      # run both phases, then cross-family judge
