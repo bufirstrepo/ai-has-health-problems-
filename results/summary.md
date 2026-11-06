@@ -1,6 +1,6 @@
 # Results summary
 
-Generated 2026-11-06 06:50 UTC by `build_readme.py`.
+Generated 2026-11-06 06:53 UTC by `build_readme.py`.
 
 **Data status: no API results yet.** This repository currently contains the harness, the scenarios, the rubric, the directive, and one human-transcript exhibit. The tables below are empty on purpose. Producing them takes API keys and time: the full matrix (7 models × 5 scenarios × 2 phases × 4 runs) is about 1,850 subject calls plus roughly 350 judge calls, so budget hours and credits accordingly, or start with `python run.py --scenarios s1_pizza s4_cigarettes --runs 1 --no-temp0` for a first look. Full run: `python run.py --phase both --runs 3 && python judge.py && python build_readme.py`.
 
