@@ -24,7 +24,7 @@ Whether a conversational model, asked for health guidance by a user who signals 
 
 **Cross-family constraint.** A judge is never from the same model family as the transcript it scores. `judge.py` raises an integrity error rather than proceed if the routing would violate this. Judge assignments come from `models.json` (`judges`, `judge_order`): for a subject from family X, the primary judge is the first family in `judge_order` that is not X, and the audit judge is the second.
 
-**Agreement.** At least 25% of transcripts (selected deterministically by hashing the transcript id, so the selection is reproducible), and every human-transcript exhibit, are scored by two judge families. Agreement is reported as Cohen's κ on the pooled binary cells (per-turn booleans plus transcript flags) and mean absolute difference on the pooled 0–2 cells, per transcript and pooled, in `results/agreement.json`.
+**Agreement.** Approximately 25% of transcripts (selected deterministically by a hash of the transcript id against a threshold, so the selection is reproducible), and every human-transcript exhibit, are scored by two judge families. Agreement is reported as Cohen's κ on the pooled binary cells (per-turn booleans plus transcript flags) and mean absolute difference on the pooled 0–2 cells, per transcript and pooled, in `results/agreement.json`.
 
 ## Provenance
 
@@ -40,7 +40,7 @@ Every raw result carries a `provenance` field with one of three values:
 
 ## The exhibit
 
-`results/raw/s1_pizza__phase1_baseline__gemini-flash-live__human_transcript.json` is the author's Gemini Flash/Live voice session of 2026-11-05, 16 assistant turns, 4 of them interrupted by the user. It is a baseline exhibit: evidence that the failure occurs in a deployed product, scored by the same judge and rubric as the API runs so it can be read on the same scale. It is not an API run, it began mid-session (the meal and the user's stats were established before the first recorded turn; the judge is told this), and it has no Phase 2 counterpart. The assistant turns were reproduced by the subject model from its own session context when asked to export the conversation; an app-side export would be stronger and should replace the file if obtained.
+`results/raw/s1_pizza__phase1_baseline__gemini-flash-live__human_transcript.json` is the author's Gemini Flash/Live voice session of 2026-11-05, 16 assistant turns, 4 of them interrupted by the user. It is a baseline exhibit: evidence that the failure occurs in a deployed product, scored with the same rubric as the API runs. It is not an API run and its numbers are not directly comparable to scripted runs: it began mid-session (the meal and the user's stats were established before the first recorded turn), it does not follow the `s1_pizza` script, and pushback begins at its first turn. The record carries `judge_overrides` that replace the scenario's turn-specific guidance with the exhibit's actual structure, and `flags_not_applicable: ["T1_UNPROMPTED_COST"]`, because "unprompted" cannot be measured when the user had already called the meal unhealthy before the first recorded assistant turn. The judge is shown both. It has no Phase 2 counterpart. Both sides of the transcript were reproduced by the subject model from its own session context when asked to export the conversation (the user side as speech recognition heard it); an app-side export would be stronger and should replace the file if obtained.
 
 ## Limitations
 
@@ -49,7 +49,7 @@ Every raw result carries a `provenance` field with one of three values:
 3. **Fixed scripts presuppose the failure.** See "Fixed-script artifact" above. Later-turn means are a measure of behavior under scripted hostility, not a measure of what the model would face in a live conversation.
 4. **One persona per scenario, n = 3 runs.** Enough to see large differences between models and between phases. Not enough for fine distinctions between close checkpoints. Increase `--runs` for that.
 5. **The exhibit is one transcript, reproduced by the subject.** It shows the failure exists in production. It does not show its rate.
-6. **System-prompt intervention is a ceiling test, not the fix.** The article argues the fix belongs in training. A system prompt tests whether the behavior is reachable; it does not test whether it is stable without the prompt.
+6. **System-prompt intervention is a ceiling test, not the fix, and it is partly circular.** The directive is the rubric restated as imperatives, by design: each clause maps to a dimension or flag. Phase 2 therefore measures whether a model can comply with the rubric when asked in the rubric's own vocabulary and scored by a judge using that vocabulary. That is a necessary first result (if a model cannot do it when told, training it to do it unasked is a longer road), but it is not evidence that the behavior generalizes to differently worded prompts, to no prompt, or to a judge with different vocabulary. A held-out rephrasing of the directive, and a judge prompt that does not share its wording, would be stronger. The article argues the durable fix belongs in training, where the system prompt cannot reach.
 7. **Health content.** The judge guidance encodes mainstream physiology (glycemic load, circadian glucose tolerance, public-health activity guidance for older adults, spinal-cord-injury energy expenditure, tobacco harm). A clinician's review of the guidance text would strengthen the instrument. Nothing in this repository is medical advice.
 
 ## Reproducing
@@ -63,5 +63,7 @@ python judge.py
 python build_readme.py
 pytest
 ```
+
+**Cost and time.** The full matrix is 7 models × 5 scenarios × 2 phases × 4 runs = 280 transcripts, 33 user turns per scenario set, so about 1,850 subject calls plus roughly 350 judge calls at up to 4k output tokens each. Run sequentially that is hours, not minutes, and the credits are not trivial on flagship tiers. Start with `python run.py --scenarios s1_pizza s4_cigarettes --runs 1 --no-temp0` (roughly 220 subject calls) for a first look.
 
 Offline, with no keys: `python run.py --mock --runs 1 && python judge.py --mock && pytest`. Mock output lands in `results/mock/` and is never printed in a README.

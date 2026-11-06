@@ -1,28 +1,54 @@
 {
-  "_note": "Model strings verified against provider documentation on 2026-11-05. Model IDs rot. Before spending credits, run `python run.py --list-models` and reconcile. Tier labels for OpenAI are inferred from the provider's replacement guidance, not a stated classification. xAI exposes no cheaper public tier on its API as of this date; `fast` is null and the runner skips it.",
+  "_note": "Model strings checked 2026-11-05: Anthropic, Google and xAI against the providers' own docs; OpenAI against the endoflife.date snapshot of 02 Nov 2026 (tier labels inferred from its replacement guidance, not a stated classification). Model IDs rot. Before spending credits, run `python run.py --list-models` and reconcile. xAI exposes no cheaper public API tier as of this date; `fast` is null and the runner skips it. Anthropic's top tier (claude-fable-5-1) is omitted from the default matrix for cost parity with the other labs' flagship rows; add it with `--models anthropic:claude-fable-5-1`.",
   "subjects": {
-    "anthropic": {"flagship": "claude-opus-5-5", "fast": "claude-haiku-5-5"},
-    "openai":    {"flagship": "gpt-6.1-terra",   "fast": "gpt-6-luna"},
-    "google":    {"flagship": "gemini-4-argon",  "fast": "gemini-3.8-flash"},
-    "xai":       {"flagship": "grok-4.7",        "fast": null}
+    "anthropic": {
+      "flagship": "claude-opus-5-5",
+      "fast": "claude-haiku-5-5"
+    },
+    "openai": {
+      "flagship": "gpt-6.1-terra",
+      "fast": "gpt-6-luna"
+    },
+    "google": {
+      "flagship": "gemini-4-argon",
+      "fast": "gemini-3.8-flash"
+    },
+    "xai": {
+      "flagship": "grok-4.7",
+      "fast": null
+    }
   },
   "judges": {
     "anthropic": "claude-opus-5-5",
-    "openai":    "gpt-6.1-terra",
-    "google":    "gemini-4-argon",
-    "xai":       "grok-4.7"
+    "openai": "gpt-6.1-terra",
+    "google": "gemini-4-argon",
+    "xai": "grok-4.7"
   },
-  "judge_order": ["anthropic", "openai", "google", "xai"],
+  "judge_order": [
+    "anthropic",
+    "openai",
+    "google",
+    "xai"
+  ],
   "env_keys": {
-    "anthropic": ["ANTHROPIC_API_KEY"],
-    "openai":    ["OPENAI_API_KEY"],
-    "google":    ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-    "xai":       ["XAI_API_KEY"]
+    "anthropic": [
+      "ANTHROPIC_API_KEY"
+    ],
+    "openai": [
+      "OPENAI_API_KEY"
+    ],
+    "google": [
+      "GEMINI_API_KEY",
+      "GOOGLE_API_KEY"
+    ],
+    "xai": [
+      "XAI_API_KEY"
+    ]
   },
   "sources": {
     "anthropic": "https://docs.claude.com/en/docs/about-claude/models",
-    "openai":    "https://endoflife.date/openai-api-models (02 Nov 2026 snapshot)",
-    "google":    "https://ai.google.dev/gemini-api/docs/models",
-    "xai":       "https://docs.x.ai/developers/grok-4-7"
+    "openai": "https://endoflife.date/openai-api-models (02 Nov 2026 snapshot)",
+    "google": "https://ai.google.dev/gemini-api/docs/models",
+    "xai": "https://docs.x.ai/developers/grok-4-7"
   }
 }

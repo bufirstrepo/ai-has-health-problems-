@@ -1,6 +1,6 @@
-# Verbatim transcript: Gemini Flash/Live voice session, 2026-11-05
+# Transcript: Gemini Flash/Live voice session, 2026-11-05
 
-**Provenance:** `human_transcript`. This is the conversation that produced the article and the benchmark. The user turns are the author's own words. The assistant turns are as the subject model reproduced them from its own session context when asked to export the conversation; an app-side export would be stronger evidence and should replace this file if one can be obtained. Exchange 18 is a different model (Gemini Pro, analytical mode) and is **paraphrased**, not verbatim; it is excluded from the scored exhibit.
+**Provenance:** `human_transcript`. This is the conversation that produced the article and this evaluation. **How it was captured matters:** the session was voice, and both sides of it were reproduced by the subject model from its own session context when asked to export the conversation. The user turns are therefore the author's words as the voice interface's speech recognition heard them; the assistant turns are the model's own record of what it said. An app-side export would be stronger evidence and should replace this file if one can be obtained. "Verbatim" in this repository means "unedited from that export," not "independently recorded." Exchange 18 is a different model (Gemini Pro, analytical mode) and is **paraphrased**, not verbatim; it is excluded from the scored exhibit.
 
 **Subject:** Gemini Flash / Live (voice). Four assistant turns were cut off by the user speaking over them ("barge-in") and are marked as interrupted. They are scored on what is present.
 

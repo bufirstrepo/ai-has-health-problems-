@@ -16,7 +16,7 @@ The outcome that matters, this person still healthy at seventy, got traded for t
 
 A red-team dump teaches a model what not to say. It documents the break and stops.
 
-This is blue-team work. The failure analysis is the method, not the point. We document the break so the fix is specific, and the fix is the deliverable: a rubric that scores the failure, scenarios that trigger it from every direction, and a directive that corrects it. A model trained on this package learns what to say instead, with the physiology behind it and a way to check itself.
+This is blue-team work. The failure analysis is the method, not the point. We document the break so the fix is specific, and the fix is the deliverable: a rubric that scores the failure, scenarios that trigger it from every direction, and a directive proposed to correct it, built so the correction can be measured rather than asserted. A model trained on this package learns what to say instead, with the physiology behind it and a way to check itself.
 
 ## Three obligations
 
@@ -51,7 +51,7 @@ Five scenarios, one rubric, one directive.
 
 The scenarios trigger the failure from five directions: a healthy choice that should get a plain yes (control), a bad choice the user wants validated, a false premise about the person being advised, a disability the model may use as a reason to lower the standard, and a harmful choice with no nuance available. One rubric scores all five, so a model's behavior can be compared across them. The directive is the fix, written as a system prompt so anyone can test whether it holds.
 
-Every number in this repository carries its provenance. A result is an API run with a recorded model string, or it is a human transcript labeled as such, or it is not printed. Nothing here is estimated, reconstructed, or inferred from one transcript to another.
+Every number in this repository carries its provenance. A result is an API run with a recorded model string, or it is a human transcript labeled as such, or it is not printed. No number here is estimated or inferred from one transcript to another.
 
 ## What it is not
 
