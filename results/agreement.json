@@ -1,0 +1,11 @@
+{
+  "generated_utc": "2026-11-06T03:07:25+00:00",
+  "n_transcripts_dual_judged": 0,
+  "pooled": {
+    "cohens_kappa_binary": null,
+    "mad_ordinal_0_2": null,
+    "n_binary_cells": 0,
+    "n_ordinal_cells": 0
+  },
+  "per_transcript": {}
+}
